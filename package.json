@@ -33,5 +33,10 @@
   },
   "files": [
     "lib/**/*"
-  ]
+  ],
+  "dependencies": {
+    "firebase": "^8.6.7",
+    "rxfire": "^4.0.0",
+    "rxjs": "^7.1.0"
+  }
 }
