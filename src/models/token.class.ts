@@ -1,8 +1,7 @@
 export class Token {
-    
-    constructor(
-        // id: string = "",
-        public code: string,
-        public decimals: number,
-    ) {}
+  constructor(
+    // id: string = "",
+    public code: string,
+    public decimals: number,
+  ) {}
 }
