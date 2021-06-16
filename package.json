@@ -1,6 +1,6 @@
 {
   "name": "radex-sdk-firestore",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "SDK for RaDEX using firestore as ledger",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -31,5 +31,7 @@
     "tslint-config-prettier": "^1.18.0",
     "typescript": "^4.3.2"
   },
-  "files": ["lib/**/*"]
+  "files": [
+    "lib/**/*"
+  ]
 }
