@@ -115,7 +115,7 @@ export async function getPairsMap(): Promise<Map<string, Pair>> {
 export function getPairsMap$(): Observable<Map<string, Pair>> {
     return collectionData(pairsCollectionRef).pipe(
         map((docs: any[]) => {
-            let pairsMap = new Map<string, Pair>();
+            const pairsMap = new Map<string, Pair>();
             docs.forEach((doc:any) => {
                 const newPair = Pair.create({...doc});
                 if (newPair) {

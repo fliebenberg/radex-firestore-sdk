@@ -38,7 +38,7 @@ export class Trade {
                 throw new Error(field + " is a required field to create a trade");
             }
         })
-        if (newTrade.parties.length == 0) {
+        if (newTrade.parties.length === 0) {
             newTrade.parties = [newTrade.buyer, newTrade.seller];
         }
         return newTrade;

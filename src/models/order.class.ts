@@ -15,7 +15,7 @@ export enum OrderType {
 export enum OrderStatus {
     EMPTY = "",
     SUBMITTING = "SUBMITTING", // order has been added to queue, but not yet processed
-    PENDING = "PENDING", //order has been added to order book, awaiting fulfilment
+    PENDING = "PENDING", // order has been added to order book, awaiting fulfilment
     COMPLETED = "COMPLETED", // order has been fulfilled
     CANCELLED = "CANCELLED" // order has been cancelled by owner
 }
@@ -58,29 +58,29 @@ export class Order {
             if (orderObj[field]) {
                 // @ts-ignore
                 newOrder[field] = orderObj[field];
-            } else if (field == "quantitySpecified" && orderObj[field] != undefined) {
+            } else if (field === "quantitySpecified" && orderObj[field] !== undefined) {
                 newOrder[field] = orderObj[field];
             } else if (
                     Order.requiredFields.includes(field) || 
-                    ((field == "price" || field == "quantity") && orderObj.type != OrderType.MARKET)
+                    ((field === "price" || field === "quantity") && orderObj.type !== OrderType.MARKET)
                 ) {
                 throw new Error(field + " is a required field to create an order");
             }
         })
-        if (newOrder.quantitySpecified == true) {
+        if (newOrder.quantitySpecified === true) {
             if (!newOrder.quantity) {
                 throw new Error("quantity must be specified to create this order");
             }
-            if (!newOrder.value && newOrder.type != OrderType.MARKET) {
+            if (!newOrder.value && newOrder.type !== OrderType.MARKET) {
                 newOrder.value = newOrder.price * newOrder.quantity;
             }
         } 
-        if (newOrder.quantitySpecified == false) {
+        if (newOrder.quantitySpecified === false) {
             if (!newOrder.value) {
                 throw new Error("value must be specified to create this order");
             }
         }
-        if (newOrder.id && newOrder.id.search("_") == -1) {
+        if (newOrder.id && newOrder.id.search("_") === -1) {
             newOrder.id = newOrder.pair + "_" + newOrder.id;
         }
         // console.log("Finished creating new order:", newOrder);
