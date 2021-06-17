@@ -457,7 +457,7 @@ export function getWalletFees$(
   pairIds: string[],
   startTime: number = 0,
   endTime: number = 0,
-): Observable<{ paid: Map<string, number>, earned: Map<string, number> }> {
+): Observable<{ paid: Map<string, number>; earned: Map<string, number> }> {
   // console.log("Getting wallet fees for wallet: "+ walletId);
   startTime = Utils.roundTo(0, startTime); // ensure startTime is interger
   endTime = Utils.roundTo(0, endTime); // ensure endTime is integer
