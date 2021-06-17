@@ -80,9 +80,7 @@ export async function cancelOrder(order: Order): Promise<string> {
 // API
 // Returns quote information for a specified market order - how many tokens it will cost, how many tokens will be received and fee payable
 // Will return NULL if the order is not a MARKET order or if the market order will not be executed
-export async function getMarketOrderQuote(
-  order: Order,
-): Promise<{
+export async function getMarketOrderQuote(order: Order): Promise<{
   pay: number;
   receive: number;
   fee: number;
