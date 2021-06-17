@@ -4,7 +4,7 @@ import { combineLatest, merge, Observable, of } from 'rxjs';
 import { filter, map, startWith, take } from 'rxjs/operators';
 import { Pair } from './models/pair.class';
 import { Order, OrderSide, OrderStatus, OrderType, AggregateOrderEntry } from './models/order.class';
-import { Trade } from './models/trade.class';
+import { Trade, TradeFeePayer } from './models/trade.class';
 import * as Utils from './utils';
 import { TimeSlice } from './models/time-slice.class';
 
@@ -13,7 +13,8 @@ const fn = FN();
 
 const pairsCollectionRef = fb.collection('pairs');
 
-export { Pair, Order, OrderSide, OrderStatus, OrderType, AggregateOrderEntry, Trade };
+export { FS }; // only needed for my testing project.
+export { Pair, Order, OrderSide, OrderStatus, OrderType, AggregateOrderEntry, Trade, TradeFeePayer, TimeSlice };
 export { Utils };
 export const SUCCESS = 'SUCCESS';
 
