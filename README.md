@@ -2,6 +2,27 @@
 
 radex-sdk-firestore is a sdk for the radex exchange using firestore as the back end for testing purposes.
 
+### INSTALL
+---
+To install radex-sdk-firestore, make sure you have nodejs installed and run the following command in your project directory.
+
+    npm install radex-sdk-firestore
+
+
+To use the sdk in your project you can either import everything under one variable
+
+    import * as radex from "radex-sdk-firestore
+
+You can then access any of the functions/classes etc as follows:
+
+    radex.Order
+    or
+    radex.getTokensList
+
+OR you can import the functions/classes etc individually
+
+    import {Order, getTokensList} from "radex-sdk-firestore
+
 ### ACTION functions
 ---
 #### function submitOrder (order: Order)
@@ -173,6 +194,7 @@ Returns an observable of a map of the tokens held in the specified wallet.
 
 
 ## CLASSES, INTERFACES, ENUMS and CONSTANTS
+---
 ### CLASS: Token
     code: string
     decimals: number
