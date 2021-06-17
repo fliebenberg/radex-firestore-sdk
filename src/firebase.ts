@@ -17,7 +17,7 @@ firebase.initializeApp(firebaseConfig);
 // export const fb = firebase.firestore();
 // export const fn = firebase.functions();
 
-const prod = false;
+const prod = true;
 
 let firestore: firebase.firestore.Firestore | null = null;
 let functions: firebase.functions.Functions | null = null;
