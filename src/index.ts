@@ -13,21 +13,16 @@ const fn = FN();
 
 const pairsCollectionRef = fb.collection('pairs');
 
-export { Pair, Order, OrderSide, OrderStatus, OrderType };
+export { Pair, Order, OrderSide, OrderStatus, OrderType, AggregateOrderEntry, Trade };
 export { Utils };
 export const SUCCESS = 'SUCCESS';
 
 // WRITE/CREATE API functions
 
 // API
-// Submits an order for processing by the RadX exchange
+// Submits an order for processing by the RaDeX exchange
 // Order will either be matched immediately with an existing order, added to the list of pending orders or rejected with an error message
 export async function submitOrder(order: Order): Promise<string> {
-  // const maxRetries = 5;
-  // let retries = 0;
-  // let retrying = true;
-  // let submitResult: string;
-  // console.log("Submitting order", order);
   const addOrderToQFn = fn.httpsCallable('addOrderToQFn');
 
   const result = await addOrderToQFn({ order: order });
@@ -61,6 +56,9 @@ export async function submitOrder(order: Order): Promise<string> {
   }
 }
 
+// API
+// Cancels an order that has been submitted previously for processing by the RaDeX exchange
+// Only orders with Status "PENDING" can be cancelled. Any part of the order that has already been fulfilled cannot be cancelled.
 export async function cancelOrder(order: Order): Promise<string> {
   const cancelOrderFn = fn.httpsCallable('cancelOrderFn');
   const result = await cancelOrderFn({ order: order });
@@ -459,7 +457,7 @@ export function getWalletFees$(
   pairIds: string[],
   startTime: number = 0,
   endTime: number = 0,
-): Observable<{ paid: Map<string, number>; earned: Map<string, number> }> {
+): Observable<{ paid: Map<string, number>, earned: Map<string, number> }> {
   // console.log("Getting wallet fees for wallet: "+ walletId);
   startTime = Utils.roundTo(0, startTime); // ensure startTime is interger
   endTime = Utils.roundTo(0, endTime); // ensure endTime is integer
