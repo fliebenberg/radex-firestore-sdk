@@ -1,6 +1,7 @@
 {
     "extends": ["tslint:recommended", "tslint-config-prettier"],
     "rules": {
-        "object-literal-shorthand": false
+        "object-literal-shorthand": false,
+        "no-console": false
     }
  }
