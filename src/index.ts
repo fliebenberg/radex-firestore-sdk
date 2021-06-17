@@ -15,8 +15,7 @@ const pairsCollectionRef = fb.collection('pairs');
 
 export { Pair, Order, OrderSide, OrderStatus, OrderType };
 export { Utils };
-export const SUCCESS = "SUCCESS";
-
+export const SUCCESS = 'SUCCESS';
 
 // WRITE/CREATE API functions
 
@@ -29,116 +28,135 @@ export async function submitOrder(order: Order): Promise<string> {
   // let retrying = true;
   // let submitResult: string;
   // console.log("Submitting order", order);
-  const addOrderToQFn = fn.httpsCallable("addOrderToQFn");
+  const addOrderToQFn = fn.httpsCallable('addOrderToQFn');
 
-  let result = await addOrderToQFn({order: order});
+  const result = await addOrderToQFn({ order: order });
   if (result.data.success) {
-      // console.log("Order added to queue. Waiting for processing. Id: " + result.data.success);
-      const orderPath = "pairs/"+ order.pair +"/queued-orders/"+ result.data.success;
-      const qMsg = await docData(fb.doc(orderPath)).pipe(
-          map((orderObj: any) => {
-              return orderObj.qMsg
-          }),
-          filter(qMsg => {
-              return qMsg != ""
-          }),
-          take(1),
-      ).toPromise();
-      if (qMsg != SUCCESS) {
-          console.warn("Order not processed: " + qMsg);
-      }
-      const delResult = await fn.httpsCallable("deleteOrderFn")({path: orderPath});
-      if (delResult.data === "SUCCESS") {
-          // console.log("Order processed and deleted from queue. Id: ", result.data.success);
-      } else {
-          console.error("Unexpected Error! Could not delete order from queue. Id: ", result.data.success);
-      }
-      return qMsg;
+    // console.log("Order added to queue. Waiting for processing. Id: " + result.data.success);
+    const orderPath = 'pairs/' + order.pair + '/queued-orders/' + result.data.success;
+    const qMsg = await docData(fb.doc(orderPath))
+      .pipe(
+        map((orderObj: any) => {
+          return orderObj.qMsg;
+        }),
+        filter((tMsg) => {
+          return tMsg !== '';
+        }),
+        take(1),
+      )
+      .toPromise();
+    if (qMsg !== SUCCESS) {
+      console.warn('Order not processed: ' + qMsg);
+    }
+    const delResult = await fn.httpsCallable('deleteOrderFn')({ path: orderPath });
+    if (delResult.data === SUCCESS) {
+      // console.log("Order processed and deleted from queue. Id: ", result.data.success);
+    } else {
+      console.error('Unexpected Error! Could not delete order from queue. Id: ', result.data.success);
+    }
+    return qMsg;
   } else {
-      console.log("Order not submitted: ", result.data);
-      return result.data;
+    console.log('Order not submitted: ', result.data);
+    return result.data;
   }
 }
 
 export async function cancelOrder(order: Order): Promise<string> {
-  const cancelOrderFn = fn.httpsCallable("cancelOrderFn");
-  let result = await cancelOrderFn({order: order});
+  const cancelOrderFn = fn.httpsCallable('cancelOrderFn');
+  const result = await cancelOrderFn({ order: order });
   if (result.data.success) {
-      console.log("Order cancelled successfully");
-      return SUCCESS;
+    console.log('Order cancelled successfully');
+    return SUCCESS;
   } else {
-      console.log("Order not cancelled", result.data);
-      return result.data.error;
+    console.log('Order not cancelled', result.data);
+    return result.data.error;
   }
 }
 
 // TODO add a function to create a new pair
-
 
 // READ-ONLY API functions
 
 // API
 // Returns quote information for a specified market order - how many tokens it will cost, how many tokens will be received and fee payable
 // Will return NULL if the order is not a MARKET order or if the market order will not be executed
-export async function getMarketOrderQuote(order: Order): 
-  Promise <{pay: number, receive: number, fee: number, payToken: string, receiveToken: string, feeToken: string} | null> 
-{
-  if (order && order.type == OrderType.MARKET) {
-
-      // console.log("Starting to get quote for order: ", order);
-      let pairInfo = Pair.create(await getPairInfo(order.pair));
-      let existingOrders = new Map<number, Order[]>();
-      if (order.side == OrderSide.BUY) {
-          const tOrders = await getPairSellOrders$(order.pair).pipe(take(1)).toPromise();
-          if (tOrders) {
-            existingOrders = tOrders;
-          };
-        } else {
-          const tOrders = await getPairBuyOrders$(order.pair).pipe(take(1)).toPromise();
-          if (tOrders) {
-            existingOrders = tOrders;
-          }
+export async function getMarketOrderQuote(
+  order: Order,
+): Promise<{
+  pay: number;
+  receive: number;
+  fee: number;
+  payToken: string;
+  receiveToken: string;
+  feeToken: string;
+} | null> {
+  if (order && order.type === OrderType.MARKET) {
+    // console.log("Starting to get quote for order: ", order);
+    const pairInfo = Pair.create(await getPairInfo(order.pair));
+    let existingOrders = new Map<number, Order[]>();
+    if (order.side === OrderSide.BUY) {
+      const tOrders = await getPairSellOrders$(order.pair).pipe(take(1)).toPromise();
+      if (tOrders) {
+        existingOrders = tOrders;
       }
-      // console.log("Got existing orders: ", existingOrders);
-      let priceLimit = order.price;
-      if (!priceLimit) {
-          priceLimit = Utils.getLastElement(Array.from(existingOrders.keys())) as number;
+    } else {
+      const tOrders = await getPairBuyOrders$(order.pair).pipe(take(1)).toPromise();
+      if (tOrders) {
+        existingOrders = tOrders;
       }
-      // let orderReq = {quantity: 0, value: 0};
-      let orderReq = null;
-      orderReq = calcMarketOrderRequirements(order, existingOrders, priceLimit, pairInfo.token1Decimals, pairInfo.token2Decimals);
-      if (orderReq == null) {
-          return null;
-      }
-      // add effect of fees to orderValue
-      let fee: number;
-      if (order.side == OrderSide.BUY) {
-          if (order.quantitySpecified) {
-              fee = Utils.roundTo(pairInfo.token2Decimals, orderReq.value * (pairInfo.liquidityFee + pairInfo.platformFee));
-              orderReq.value = Utils.roundTo(pairInfo.token2Decimals, orderReq.value + fee);
-          } else {
-              fee = Utils.roundTo(pairInfo.token1Decimals, orderReq.quantity * (pairInfo.liquidityFee + pairInfo.platformFee));
-              orderReq.quantity = Utils.roundTo(pairInfo.token1Decimals, orderReq.quantity - fee);
-          }
-      } else {
-          if (order.quantitySpecified) {
-              fee = Utils.roundTo(pairInfo.token2Decimals, orderReq.value * (pairInfo.liquidityFee + pairInfo.platformFee));
-              orderReq.value = Utils.roundTo(pairInfo.token2Decimals, orderReq.value - fee);
-          } else {
-              fee = Utils.roundTo(pairInfo.token1Decimals, orderReq.quantity * (pairInfo.liquidityFee + pairInfo.platformFee));
-              orderReq.quantity = Utils.roundTo(pairInfo.token1Decimals, orderReq.quantity + fee);
-          }
-      }
-      return {
-          pay: order.side == OrderSide.BUY ? orderReq.value : orderReq.quantity, 
-          receive: order.side == OrderSide.BUY ? orderReq.quantity : orderReq.value, 
-          fee: fee,
-          payToken: order.side == OrderSide.BUY ? pairInfo.token2 : pairInfo.token1,
-          receiveToken: order.side == OrderSide.BUY ? pairInfo.token1 : pairInfo.token2,
-          feeToken: order.quantitySpecified ? pairInfo.token2 : pairInfo.token1
-      }
-  } else {
+    }
+    // console.log("Got existing orders: ", existingOrders);
+    let priceLimit = order.price;
+    if (!priceLimit) {
+      priceLimit = Utils.getLastElement(Array.from(existingOrders.keys())) as number;
+    }
+    // let orderReq = {quantity: 0, value: 0};
+    let orderReq = null;
+    orderReq = calcMarketOrderRequirements(
+      order,
+      existingOrders,
+      priceLimit,
+      pairInfo.token1Decimals,
+      pairInfo.token2Decimals,
+    );
+    if (orderReq == null) {
       return null;
+    }
+    // add effect of fees to orderValue
+    let fee: number;
+    if (order.side === OrderSide.BUY) {
+      if (order.quantitySpecified) {
+        fee = Utils.roundTo(pairInfo.token2Decimals, orderReq.value * (pairInfo.liquidityFee + pairInfo.platformFee));
+        orderReq.value = Utils.roundTo(pairInfo.token2Decimals, orderReq.value + fee);
+      } else {
+        fee = Utils.roundTo(
+          pairInfo.token1Decimals,
+          orderReq.quantity * (pairInfo.liquidityFee + pairInfo.platformFee),
+        );
+        orderReq.quantity = Utils.roundTo(pairInfo.token1Decimals, orderReq.quantity - fee);
+      }
+    } else {
+      if (order.quantitySpecified) {
+        fee = Utils.roundTo(pairInfo.token2Decimals, orderReq.value * (pairInfo.liquidityFee + pairInfo.platformFee));
+        orderReq.value = Utils.roundTo(pairInfo.token2Decimals, orderReq.value - fee);
+      } else {
+        fee = Utils.roundTo(
+          pairInfo.token1Decimals,
+          orderReq.quantity * (pairInfo.liquidityFee + pairInfo.platformFee),
+        );
+        orderReq.quantity = Utils.roundTo(pairInfo.token1Decimals, orderReq.quantity + fee);
+      }
+    }
+    return {
+      pay: order.side === OrderSide.BUY ? orderReq.value : orderReq.quantity,
+      receive: order.side === OrderSide.BUY ? orderReq.quantity : orderReq.value,
+      fee: fee,
+      payToken: order.side === OrderSide.BUY ? pairInfo.token2 : pairInfo.token1,
+      receiveToken: order.side === OrderSide.BUY ? pairInfo.token1 : pairInfo.token2,
+      feeToken: order.quantitySpecified ? pairInfo.token2 : pairInfo.token1,
+    };
+  } else {
+    return null;
   }
 }
 
