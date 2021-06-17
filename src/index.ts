@@ -1,7 +1,7 @@
 import { FS, FN } from './firebase';
 import { collectionData, docData } from 'rxfire/firestore';
 import { combineLatest, merge, Observable, of } from 'rxjs';
-import { map, startWith, take } from 'rxjs/operators';
+import { filter, map, startWith, take } from 'rxjs/operators';
 import { Pair } from './models/pair.class';
 import { Order, OrderSide, OrderStatus, OrderType, AggregateOrderEntry } from './models/order.class';
 import { Trade } from './models/trade.class';
@@ -15,6 +15,132 @@ const pairsCollectionRef = fb.collection('pairs');
 
 export { Pair, Order, OrderSide, OrderStatus, OrderType };
 export { Utils };
+export const SUCCESS = "SUCCESS";
+
+
+// WRITE/CREATE API functions
+
+// API
+// Submits an order for processing by the RadX exchange
+// Order will either be matched immediately with an existing order, added to the list of pending orders or rejected with an error message
+export async function submitOrder(order: Order): Promise<string> {
+  // const maxRetries = 5;
+  // let retries = 0;
+  // let retrying = true;
+  // let submitResult: string;
+  // console.log("Submitting order", order);
+  const addOrderToQFn = fn.httpsCallable("addOrderToQFn");
+
+  let result = await addOrderToQFn({order: order});
+  if (result.data.success) {
+      // console.log("Order added to queue. Waiting for processing. Id: " + result.data.success);
+      const orderPath = "pairs/"+ order.pair +"/queued-orders/"+ result.data.success;
+      const qMsg = await docData(fb.doc(orderPath)).pipe(
+          map((orderObj: any) => {
+              return orderObj.qMsg
+          }),
+          filter(qMsg => {
+              return qMsg != ""
+          }),
+          take(1),
+      ).toPromise();
+      if (qMsg != SUCCESS) {
+          console.warn("Order not processed: " + qMsg);
+      }
+      const delResult = await fn.httpsCallable("deleteOrderFn")({path: orderPath});
+      if (delResult.data === "SUCCESS") {
+          // console.log("Order processed and deleted from queue. Id: ", result.data.success);
+      } else {
+          console.error("Unexpected Error! Could not delete order from queue. Id: ", result.data.success);
+      }
+      return qMsg;
+  } else {
+      console.log("Order not submitted: ", result.data);
+      return result.data;
+  }
+}
+
+export async function cancelOrder(order: Order): Promise<string> {
+  const cancelOrderFn = fn.httpsCallable("cancelOrderFn");
+  let result = await cancelOrderFn({order: order});
+  if (result.data.success) {
+      console.log("Order cancelled successfully");
+      return SUCCESS;
+  } else {
+      console.log("Order not cancelled", result.data);
+      return result.data.error;
+  }
+}
+
+// TODO add a function to create a new pair
+
+
+// READ-ONLY API functions
+
+// API
+// Returns quote information for a specified market order - how many tokens it will cost, how many tokens will be received and fee payable
+// Will return NULL if the order is not a MARKET order or if the market order will not be executed
+export async function getMarketOrderQuote(order: Order): 
+  Promise <{pay: number, receive: number, fee: number, payToken: string, receiveToken: string, feeToken: string} | null> 
+{
+  if (order && order.type == OrderType.MARKET) {
+
+      // console.log("Starting to get quote for order: ", order);
+      let pairInfo = Pair.create(await getPairInfo(order.pair));
+      let existingOrders = new Map<number, Order[]>();
+      if (order.side == OrderSide.BUY) {
+          const tOrders = await getPairSellOrders$(order.pair).pipe(take(1)).toPromise();
+          if (tOrders) {
+            existingOrders = tOrders;
+          };
+        } else {
+          const tOrders = await getPairBuyOrders$(order.pair).pipe(take(1)).toPromise();
+          if (tOrders) {
+            existingOrders = tOrders;
+          }
+      }
+      // console.log("Got existing orders: ", existingOrders);
+      let priceLimit = order.price;
+      if (!priceLimit) {
+          priceLimit = Utils.getLastElement(Array.from(existingOrders.keys())) as number;
+      }
+      // let orderReq = {quantity: 0, value: 0};
+      let orderReq = null;
+      orderReq = calcMarketOrderRequirements(order, existingOrders, priceLimit, pairInfo.token1Decimals, pairInfo.token2Decimals);
+      if (orderReq == null) {
+          return null;
+      }
+      // add effect of fees to orderValue
+      let fee: number;
+      if (order.side == OrderSide.BUY) {
+          if (order.quantitySpecified) {
+              fee = Utils.roundTo(pairInfo.token2Decimals, orderReq.value * (pairInfo.liquidityFee + pairInfo.platformFee));
+              orderReq.value = Utils.roundTo(pairInfo.token2Decimals, orderReq.value + fee);
+          } else {
+              fee = Utils.roundTo(pairInfo.token1Decimals, orderReq.quantity * (pairInfo.liquidityFee + pairInfo.platformFee));
+              orderReq.quantity = Utils.roundTo(pairInfo.token1Decimals, orderReq.quantity - fee);
+          }
+      } else {
+          if (order.quantitySpecified) {
+              fee = Utils.roundTo(pairInfo.token2Decimals, orderReq.value * (pairInfo.liquidityFee + pairInfo.platformFee));
+              orderReq.value = Utils.roundTo(pairInfo.token2Decimals, orderReq.value - fee);
+          } else {
+              fee = Utils.roundTo(pairInfo.token1Decimals, orderReq.quantity * (pairInfo.liquidityFee + pairInfo.platformFee));
+              orderReq.quantity = Utils.roundTo(pairInfo.token1Decimals, orderReq.quantity + fee);
+          }
+      }
+      return {
+          pay: order.side == OrderSide.BUY ? orderReq.value : orderReq.quantity, 
+          receive: order.side == OrderSide.BUY ? orderReq.quantity : orderReq.value, 
+          fee: fee,
+          payToken: order.side == OrderSide.BUY ? pairInfo.token2 : pairInfo.token1,
+          receiveToken: order.side == OrderSide.BUY ? pairInfo.token1 : pairInfo.token2,
+          feeToken: order.quantitySpecified ? pairInfo.token2 : pairInfo.token1
+      }
+  } else {
+      return null;
+  }
+}
 
 // API
 // Returns an array all the tokens that can be exchanged.
@@ -139,14 +265,14 @@ export function getPairOrderBook$(
   pairId: string,
   limit: number = 40,
 ): Observable<{ sells: AggregateOrderEntry[]; buys: AggregateOrderEntry[] }> {
-  const buyOrderBook$ = getPairBuyOrders(pairId).pipe(
+  const buyOrderBook$ = getPairBuyOrders$(pairId).pipe(
     // aggregate orders per price
     map((fullOrdersMap: Map<number, Order[]>) => {
       return aggregateOrders(fullOrdersMap).slice(0, limit);
     }),
     startWith([]),
   );
-  const sellOrderBook$ = getPairSellOrders(pairId).pipe(
+  const sellOrderBook$ = getPairSellOrders$(pairId).pipe(
     // aggregate orders per price
     map((fullOrdersMap: Map<number, Order[]>) => {
       return aggregateOrders(fullOrdersMap).slice(0, limit).reverse();
@@ -164,14 +290,14 @@ export function getPairOrderBook$(
 // API
 // Returns a price indexed map of all Buy orders for the specified pair.
 // Prices are sorted descending and orders are sorted by ascending dateCreated for each price.
-export function getPairBuyOrders(pairId: string): Observable<Map<number, Order[]>> {
+export function getPairBuyOrders$(pairId: string): Observable<Map<number, Order[]>> {
   return getPairOrdersMap('buy', pairId, Utils.SortOrder.DESCENDING);
 }
 
 // API
 // Returns a price indexed map of all Sell orders for the specified pair.
 // Prices are sorted ascending and orders are sorted by ascending dateCreated for each price.
-export function getPairSellOrders(pairId: string): Observable<Map<number, Order[]>> {
+export function getPairSellOrders$(pairId: string): Observable<Map<number, Order[]>> {
   return getPairOrdersMap('sell', pairId, Utils.SortOrder.ASCENDING);
 }
 
@@ -179,8 +305,8 @@ export function getPairSellOrders(pairId: string): Observable<Map<number, Order[
 // Returns an array of trades for the specified pair.
 // Trades are sorted ASCENDING based on the trade date. Results are limited to the last "limit" trades - default and max is 1000.
 // TODO Add in startAt parameter to allow extracting subsets of results.
-export function getPairTrades(pairId: string, limit: number = 1000): Observable<Trade[]> {
-  return getPairTradesByTime(pairId, 0, 0, limit);
+export function getPairTrades$(pairId: string, limit: number = 1000): Observable<Trade[]> {
+  return getPairTradesByTime$(pairId, 0, 0, limit);
 }
 
 // API
@@ -188,7 +314,7 @@ export function getPairTrades(pairId: string, limit: number = 1000): Observable<
 // Date/time is specified in milliseconds since UTC.
 // Trades are sorted ASCENDING based on the trade date. Results are limited to the last "limit" trades - default is 1000.
 // TODO Add in startAt parameter to allow extracting subsets of results.
-export function getPairTradesByTime(
+export function getPairTradesByTime$(
   pairId: string,
   startTime: number = 0,
   endTime: number = 0,
@@ -217,8 +343,8 @@ export function getPairTradesByTime(
 
 // API
 // Returns an array of slices for the specified pair.
-export function getPairSlices(pairId: string, limit: number = 1000): Observable<TimeSlice[]> {
-  return getPairSlicesByTime(pairId, 0, 0, limit);
+export function getPairSlices$(pairId: string, limit: number = 1000): Observable<TimeSlice[]> {
+  return getPairSlicesByTime$(pairId, 0, 0, limit);
 }
 
 // API
@@ -226,7 +352,7 @@ export function getPairSlices(pairId: string, limit: number = 1000): Observable<
 // Date/time is specified in milliseconds since UTC.
 // Slices are sorted ASCENDING based on the slice startTime. Results are limited to the last "limit" slices - default is 1000.
 // TODO Add in startAt parameter to allow extracting subsets of results.
-export function getPairSlicesByTime(
+export function getPairSlicesByTime$(
   pairId: string,
   startTime: number = 0,
   endTime: number = 0,
@@ -264,7 +390,7 @@ export function getPairSlicesByTime(
 // API
 // Returns an array of trades for the specified wallet and the specified time period
 // Trades are sorted ASCENDING based on the trade date. Results are limited to the last "limit" trades - defualt is 1000.
-export function getWalletTrades(
+export function getWalletTrades$(
   walletId: string,
   pairIds: string[],
   startTime: number = 0,
@@ -312,7 +438,7 @@ export function getWalletTrades(
 
 // API
 // Returns a map with the fees earned in various tokens for the specified wallet and the specified time period.
-export function getWalletFees(
+export function getWalletFees$(
   walletId: string,
   pairIds: string[],
   startTime: number = 0,
@@ -321,7 +447,7 @@ export function getWalletFees(
   // console.log("Getting wallet fees for wallet: "+ walletId);
   startTime = Utils.roundTo(0, startTime); // ensure startTime is interger
   endTime = Utils.roundTo(0, endTime); // ensure endTime is integer
-  const walletTrades = getWalletTrades(walletId, pairIds, startTime, endTime);
+  const walletTrades = getWalletTrades$(walletId, pairIds, startTime, endTime);
   // const query = tradesCollectionRef
   //     .where("parties", "array-contains", walletId)
   //     .where("date", ">=", startTime)
